@@ -1,83 +1,66 @@
-# prep_regression.py
-
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
+import os
+from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
+from utils_cleaning import fix_winequality
 
-from utils_cleaning import (
-    drop_empty_columns,
-    replace_invalid_values,
-    convert_numeric_features,
-    fix_winequality,
-)
 
-def prepare_regression(df, target, dataset_name=None):
+def prepare_regression(df, target, dataset_name):
+    """
+    Main regression preparation function.
+    Returns:
+        X_skl : numpy array for sklearn models
+        y     : numpy array target
+        X_rlt : numpy array for RLT python
+        y_rlt : numpy array target for RLT python
+    """
 
-    # CLEAN RAW
-    df = drop_empty_columns(df)
-    df = replace_invalid_values(df)
+    # ============================================
+    # 1. Fix winequality datasets BEFORE anything
+    # ============================================
+    if "winequality" in dataset_name.lower():
+        csv_path = os.path.join("Data", dataset_name + ".csv")
+        df = fix_winequality(csv_path)
 
-    # WINE QUALITY FIX
-    if dataset_name in ["winequality-red", "winequality-white"]:
-        df = fix_winequality(dataset_name + ".csv")
-
-    # Remove missing target
+    # ============================================
+    # 2. Drop rows where target is missing
+    # ============================================
     df = df.dropna(subset=[target])
 
-    # Convert numeric
-    df = convert_numeric_features(df, target)
-
-    # Remove useless columns
-    cols_to_remove = ["car name", "name", "CarName", "model", "id"]
-    for col in cols_to_remove:
-        if col in df.columns:
-            df = df.drop(columns=[col])
-
-    # Separate X / y
-    y = df[target]
+    # ============================================
+    # 3. Separate features & target
+    # ============================================
+    y = df[target].astype(float).values
     X = df.drop(columns=[target])
 
-    # ==========================
-    # SKLEARN PIPELINE
-    # ==========================
-    num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
-    cat_cols = X.select_dtypes(exclude=[np.number]).columns.tolist()
+    # ============================================
+    # 4. Convert columns to numeric if possible
+    # ============================================
+    for col in X.columns:
+        X[col] = pd.to_numeric(X[col], errors="coerce")
 
-    num_pipe = Pipeline([
-        ("impute", SimpleImputer(strategy="median")),
-        ("scale", StandardScaler())
-    ])
+    # ============================================
+    # 5. Remove columns that are completely NaN
+    # ============================================
+    X = X.dropna(axis=1, how="all")
 
-    cat_pipe = Pipeline([
-        ("impute", SimpleImputer(strategy="most_frequent")),
-        ("encode", OneHotEncoder(handle_unknown="ignore"))
-    ])
+    # ============================================
+    # 6. Impute missing values (median)
+    # ============================================
+    imputer = SimpleImputer(strategy="median")
+    X_imputed = imputer.fit_transform(X)
 
-    transformer = ColumnTransformer([
-        ("num", num_pipe, num_cols),
-        ("cat", cat_pipe, cat_cols),
-    ])
-
-    X_sklearn = transformer.fit_transform(X)
-
-    # ==========================
-    # RLT VERSION
-    # ==========================
-    X_rlt = X.copy()
-
-    for col in X_rlt.columns:
-        X_rlt[col] = pd.to_numeric(X_rlt[col], errors="coerce")
-
-    for col in X_rlt.columns:
-        med = X_rlt[col].median()
-        if pd.isna(med):
-            med = 0
-        X_rlt[col] = X_rlt[col].fillna(med)
-
+    # ============================================
+    # 7. Scale features for sklearn models
+    # ============================================
     scaler = StandardScaler()
-    X_rlt = pd.DataFrame(scaler.fit_transform(X_rlt), columns=X_rlt.columns)
+    X_skl = scaler.fit_transform(X_imputed)
 
-    return X_sklearn, y, X_rlt, y
+    # ============================================
+    # 8. Prepare data for RLT (NO scaling)
+    # ============================================
+    X_rlt = X_imputed.copy()
+    y_rlt = y.copy()
+
+    return X_skl, y, X_rlt, y_rlt
