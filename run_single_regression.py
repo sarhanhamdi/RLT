@@ -4,7 +4,7 @@ import os
 
 from prep_regression import prepare_regression
 from modeling_regression import modeling_regression
-from run_total_preparation import find_csv   # <== Import essentiel pour winequality
+#from run_total_preparation import find_csv   # <== Import essentiel pour winequality
 
 
 # ============================================
@@ -16,8 +16,8 @@ target_column = sys.argv[2]       # ex: mpg
 # ============================================
 #  FIND THE CORRECT CSV FILE IN /Data
 # ============================================
-csv_file = find_csv(dataset_name)    # detects winequality-red.csv, etc.
-csv_path = os.path.join("Data", csv_file)
+#csv_file = find_csv(dataset_name)    # detects winequality-red.csv, etc.
+csv_path = os.path.join("Data", dataset_name)
 
 print(f"\n=== LOADING REGR DATASET: {csv_path} ===")
 
