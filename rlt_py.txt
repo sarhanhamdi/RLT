@@ -1,0 +1,288 @@
+# RLT/Models/rlt.py
+
+import numpy as np
+from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
+from sklearn.ensemble import ExtraTreesRegressor
+
+
+class RLTBase(BaseEstimator):
+    def __init__(
+        self,
+        n_estimators: int = 100,
+        n_min: int = 5,
+        muting: str = "none",   # "none", "moderate", "aggressive"
+        k: int = 1,             # nb max de variables pour la combinaison linéaire
+        max_depth: int | None = None,
+        random_state: int | None = None,
+    ):
+        self.n_estimators = n_estimators
+        self.n_min = n_min
+        self.muting = muting
+        self.k = k
+        self.max_depth = max_depth
+        self.random_state = random_state
+
+
+# =========================
+#   REGRESSION avec muting local + k
+# =========================
+
+class RLTRegressor(RLTBase, RegressorMixin):
+    """
+    RLT simplifié :
+      - Ensemble d'arbres binaires.
+      - À chaque noeud :
+          * ExtraTreesRegressor local -> importances de variables.
+          * Muting local :
+              muting = "none"       : aucune variable mutée.
+              muting = "moderate"   : mute 50% des variables les moins importantes.
+              muting = "aggressive" : mute 80% des variables les moins importantes.
+          * Split sur combinaison linéaire de k variables (parmi celles conservées).
+      - On travaille uniquement avec des indices LOCAUX dans l'arbre
+        -> pas de problème d'IndexError lié aux indices globaux.
+    """
+
+    def _apply_muting(self, p_local, importances_local):
+        """
+        p_local : nombre de colonnes locales (au noeud)
+        importances_local : shape (p_local,)
+        Retourne un masque booléen local 'keep_mask'.
+        """
+        if self.muting == "none":
+            return np.ones(p_local, dtype=bool)
+
+        if self.muting == "moderate":
+            frac = 0.5
+        elif self.muting == "aggressive":
+            frac = 0.8
+        else:
+            # valeur non reconnue -> pas de muting
+            return np.ones(p_local, dtype=bool)
+
+        order = np.argsort(importances_local)  # du moins important au plus important
+        n = p_local
+        n_mute = max(1, int(frac * n))
+
+        keep_mask = np.ones(p_local, dtype=bool)
+        to_mute = order[:n_mute]
+        keep_mask[to_mute] = False
+
+        # sécurité : ne jamais tout supprimer
+        if not keep_mask.any():
+            keep_mask[:] = True
+
+        return keep_mask
+
+    def _build_tree_reg(self, X, y, depth, rng):
+        """
+        X : (n, p_local) colonnes locales au noeud.
+        """
+        n, p_local = X.shape
+
+        # Critères d'arrêt
+        if n <= self.n_min or (self.max_depth is not None and depth >= self.max_depth):
+            return {"is_leaf": True, "prediction": float(np.mean(y))}
+
+        if np.allclose(y, y.mean()):
+            return {"is_leaf": True, "prediction": float(np.mean(y))}
+
+        # 1) ExtraTrees local
+        et = ExtraTreesRegressor(
+            n_estimators=20,
+            max_features="sqrt",
+            random_state=int(rng.integers(0, 1_000_000)),
+            n_jobs=1,
+        )
+        et.fit(X, y)
+        importances_local = et.feature_importances_
+
+        if np.all(importances_local <= 0):
+            return {"is_leaf": True, "prediction": float(np.mean(y))}
+
+        # 2) Muting local (none / moderate 50% / aggressive 80%)
+        keep_mask = self._apply_muting(p_local, importances_local)
+        X_kept = X[:, keep_mask]
+        importances_kept = importances_local[keep_mask]
+        p_kept = X_kept.shape[1]
+
+        # 3) Choix des features pour la combinaison linéaire parmi les kept
+        order_desc = np.argsort(-importances_kept)  # décroissant
+        k_eff = min(self.k, len(order_desc))
+        selected_idx_kept = order_desc[:k_eff]       # indices LOCAUX dans X_kept
+
+        # Combinaison linéaire aléatoire
+        w = rng.normal(size=k_eff)
+        w = w / (np.linalg.norm(w) + 1e-12)
+
+        X_sel = X_kept[:, selected_idx_kept]
+        proj = X_sel @ w
+
+        if np.allclose(proj, proj.mean()):
+            return {"is_leaf": True, "prediction": float(np.mean(y))}
+
+        # 4) Chercher un seuil sur la projection
+        unique_vals = np.unique(proj)
+        if unique_vals.size <= 1:
+            return {"is_leaf": True, "prediction": float(np.mean(y))}
+
+        qs = np.linspace(0.1, 0.9, 9)
+        candidates = np.unique(np.quantile(proj, qs))
+
+        best_threshold = None
+        best_mse = np.inf
+        best_left_idx = None
+        best_right_idx = None
+
+        for thr in candidates:
+            left_idx = proj <= thr
+            right_idx = ~left_idx
+            if left_idx.sum() < self.n_min or right_idx.sum() < self.n_min:
+                continue
+            y_left, y_right = y[left_idx], y[right_idx]
+            mse_left = np.mean((y_left - y_left.mean()) ** 2)
+            mse_right = np.mean((y_right - y_right.mean()) ** 2)
+            mse = (left_idx.sum() * mse_left + right_idx.sum() * mse_right) / n
+            if mse < best_mse:
+                best_mse = mse
+                best_threshold = float(thr)
+                best_left_idx = left_idx
+                best_right_idx = right_idx
+
+        if best_threshold is None:
+            return {"is_leaf": True, "prediction": float(np.mean(y))}
+
+        # 5) Fils construits sur X_kept (muté)
+        X_left_child = X_kept[best_left_idx]
+        X_right_child = X_kept[best_right_idx]
+
+        left_tree = self._build_tree_reg(
+            X_left_child,
+            y[best_left_idx],
+            depth + 1,
+            rng,
+        )
+        right_tree = self._build_tree_reg(
+            X_right_child,
+            y[best_right_idx],
+            depth + 1,
+            rng,
+        )
+
+        return {
+            "is_leaf": False,
+            "threshold": best_threshold,
+            "weights": w,                        # coeffs combinaison linéaire
+            "features_local": selected_idx_kept, # indices LOCAUX dans X_kept
+            "left": left_tree,
+            "right": right_tree,
+        }
+
+    def _predict_tree_reg(self, tree, X):
+        """
+        X : (n, p) dans l'espace LOCAL du tree (comme à l'entraînement).
+        """
+        n = X.shape[0]
+        preds = np.empty(n, dtype=float)
+
+        def recurse(node, idx_mask, X_node):
+            if node["is_leaf"]:
+                preds[idx_mask] = node["prediction"]
+                return
+
+            feats = node["features_local"]
+            w = node["weights"]
+            thr = node["threshold"]
+
+            X_sel = X_node[:, feats]
+            proj = X_sel @ w
+
+            left_local = proj <= thr
+            right_local = ~left_local
+
+            idx_array = np.where(idx_mask)[0]
+            left_idx = np.zeros_like(idx_mask, dtype=bool)
+            right_idx = np.zeros_like(idx_mask, dtype=bool)
+            left_idx[idx_array[left_local]] = True
+            right_idx[idx_array[right_local]] = True
+
+            if left_idx.any():
+                recurse(node["left"], left_idx, X[left_idx])
+            if right_idx.any():
+                recurse(node["right"], right_idx, X[right_idx])
+
+        all_idx = np.ones(n, dtype=bool)
+        recurse(tree, all_idx, X)
+        return preds
+
+    def fit(self, X, y):
+        rng = np.random.default_rng(self.random_state)
+        self.trees_ = []
+        n, _ = X.shape
+
+        for _ in range(self.n_estimators):
+            idx = rng.integers(0, n, size=n)  # bootstrap
+            X_boot = X[idx]                  # tout en local
+            tree = self._build_tree_reg(
+                X_boot,
+                y[idx],
+                depth=0,
+                rng=rng,
+            )
+            self.trees_.append(tree)
+        return self
+
+    def predict(self, X):
+        all_preds = [self._predict_tree_reg(tree, X) for tree in self.trees_]
+        all_preds = np.vstack(all_preds)
+        return all_preds.mean(axis=0)
+
+
+# =========================
+#   CLASSIFICATION (simple)
+# =========================
+
+class RLTClassifier(RLTBase, ClassifierMixin):
+    """
+    Version simplifiée pour classification :
+      - Chaque "arbre" prédit la classe majoritaire sur son bootstrap.
+      - Vote majoritaire global.
+    """
+
+    def _fit_single_tree(self, X, y):
+        y_arr = np.array(y)
+        values, counts = np.unique(y_arr, return_counts=True)
+        majority_class = values[np.argmax(counts)]
+        return {"prediction": majority_class}
+
+    def fit(self, X, y):
+        rng = np.random.default_rng(self.random_state)
+        self.trees_ = []
+        n, _ = X.shape
+        for _ in range(self.n_estimators):
+            idx = rng.integers(0, n, size=n)
+            tree = self._fit_single_tree(X[idx], y[idx])
+            self.trees_.append(tree)
+        return self
+
+    def predict(self, X):
+        tree_preds = np.array([t["prediction"] for t in self.trees_])
+        values, counts = np.unique(tree_preds, return_counts=True)
+        majority_class = values[np.argmax(counts)]
+        return np.full(X.shape[0], majority_class)
+
+    def predict_proba(self, X):
+        y_pred = self.predict(X)
+        classes = np.unique(y_pred)
+        self.classes_ = classes
+
+        if len(classes) == 2:
+            c0, c1 = classes
+            proba = np.zeros((X.shape[0], 2), dtype=float)
+            proba[:, 0] = (y_pred == c0).astype(float)
+            proba[:, 1] = (y_pred == c1).astype(float)
+            return proba
+
+        proba = np.zeros((X.shape[0], len(classes)), dtype=float)
+        for j, c in enumerate(classes):
+            proba[:, j] = (y_pred == c).astype(float)
+        return proba

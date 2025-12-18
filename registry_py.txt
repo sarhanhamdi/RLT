@@ -1,0 +1,55 @@
+# RLT/Models/registry.py
+
+from Models.rf import make_rf_regressor, make_rf_classifier
+from Models.et import make_et_regressor, make_et_classifier
+from Models.linear_models import make_lasso, make_elasticnet, make_logreg_l2
+from Models.gb import make_gbr, make_gbc
+from Models.rlt import RLTRegressor, RLTClassifier
+
+
+def get_benchmark_models(task_type: str, random_state: int = 42):
+    """
+    Retourne un dict {nom_modele: instance} pour la tâche donnée.
+
+    Pour la régression :
+      - RF, ET, GBR, Lasso, ElasticNet
+      - RLT_none_k1, RLT_none_k2, RLT_none_k5 (muting désactivé)
+
+    Pour la classification :
+      - RF, ET, GBC, LogRegL2, RLT (simple)
+    """
+    models = {}
+
+    if task_type == "regression":
+        # Modèles de référence
+        models["RF"] = make_rf_regressor(random_state=random_state)
+        models["ET"] = make_et_regressor(random_state=random_state)
+        models["GBR"] = make_gbr(random_state=random_state)
+        models["Lasso"] = make_lasso(random_state=random_state)
+        models["ElasticNet"] = make_elasticnet(random_state=random_state)
+
+        # Variantes RLT : muting forcé à 'none'
+        for mut in ["none", "moderate", "aggressive"]:
+            for k in [1, 2, 5]:
+                name = f"RLT_{mut}_k{k}"
+                models[name] = RLTRegressor(
+                    n_estimators=50,
+                    n_min=5,
+                    muting=mut,
+                    k=k,
+                    max_depth=6,
+                    random_state=random_state,
+                )
+
+
+    else:  # classification
+        models["RF"] = make_rf_classifier(random_state=random_state)
+        models["ET"] = make_et_classifier(random_state=random_state)
+        models["GBC"] = make_gbc(random_state=random_state)
+        models["LogRegL2"] = make_logreg_l2(random_state=random_state)
+        models["RLT"] = RLTClassifier(
+            n_estimators=50,
+            random_state=random_state,
+        )
+
+    return models

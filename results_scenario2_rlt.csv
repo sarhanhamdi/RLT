@@ -1,0 +1,15 @@
+model,mse,type,muting,k
+RLT_aggressive_k1,6.452349362916045,RLT,aggressive,1
+RLT_moderate_k1,7.653650102821342,RLT,moderate,1
+RLT_none_k1,8.095283560886655,RLT,none,1
+RLT_aggressive_k2,8.146714338446305,RLT,aggressive,2
+RLT_moderate_k2,8.268954468723546,RLT,moderate,2
+GBR,8.46491883446767,Baseline,N/A,N/A
+RLT_none_k2,9.081135609234275,RLT,none,2
+RLT_moderate_k5,10.934887799459235,RLT,moderate,5
+RLT_none_k5,11.205593025282717,RLT,none,5
+RLT_aggressive_k5,11.54796711208701,RLT,aggressive,5
+RF,13.065645345786567,Baseline,N/A,N/A
+ET,13.240100444961453,Baseline,N/A,N/A
+ElasticNet,21.69920094556514,Baseline,N/A,N/A
+Lasso,23.161118463130514,Baseline,N/A,N/A

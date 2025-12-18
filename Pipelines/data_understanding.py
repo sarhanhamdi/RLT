@@ -19,7 +19,7 @@ REAL_DATASETS = [
     "ozone",
     "concrete_data",
     "BreastCanDT",
-    "auto_mpg",
+    "auto-mpg",
 ]
 
 TARGET_COLS = {
@@ -32,7 +32,7 @@ TARGET_COLS = {
     "ozone": "pluie",
     "concrete_data": "concrete_compressive_strength",
     "BreastCanDT": "diagnosis",
-    "auto_mpg": "mpg",
+    "auto-mpg": "mpg",
 }
 
 

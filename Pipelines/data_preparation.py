@@ -9,7 +9,7 @@ from sklearn.impute import SimpleImputer
 
 from Pipelines.data_understanding import TARGET_COLS, infer_task_type
 
-# Dossier des données
+# Dossier des données réelles
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "Data")
 
 
@@ -19,7 +19,7 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "Data")
 
 def load_raw_dataset(dataset_name: str, target_col: str | None = None):
     """
-    Charge un dataset brut (Data/<dataset_name>.csv), renvoie df, target_col.
+    Charge un dataset brut (Data/<dataset_name>.csv), renvoie (df, target_col).
     """
     path = os.path.join(DATA_DIR, f"{dataset_name}.csv")
     if not os.path.exists(path):
@@ -47,24 +47,28 @@ def load_raw_dataset(dataset_name: str, target_col: str | None = None):
 
 def prepare_features_and_target(df: pd.DataFrame, target_col: str):
     """
-    Sépare X/y et gère num/cat :
-      - imputation NaN
-      - X_num standardisé (StandardScaler)
-      - X_cat one-hot encodé
-    Renvoie X (np.array), y (np.array), meta dict.
+    Sépare X/y et prépare les features pour les données réelles :
+      - imputation des NaN (numérique: moyenne, catégoriel: modalité la plus fréquente)
+      - standardisation des colonnes numériques
+      - one-hot encoding des colonnes catégorielles.
+
+    Renvoie:
+      X : np.array (features prêtes pour les modèles)
+      y : np.array (cible brute)
+      meta : infos sur la préparation (noms de colonnes, scalers, etc.).
     """
-    # Séparer cible
+    # 1) Séparer cible et features
     y = df[target_col].values
     X_df = df.drop(columns=[target_col])
 
-    # Séparer numériques / catégorielles
+    # 2) Séparer numériques / catégorielles
     num_cols = X_df.select_dtypes(include=[np.number]).columns.tolist()
     cat_cols = [c for c in X_df.columns if c not in num_cols]
 
     X_num = X_df[num_cols].values if num_cols else None
     X_cat = X_df[cat_cols].astype("category") if cat_cols else None
 
-    # 1) Imputation + standardisation des numériques
+    # 3) Imputation + standardisation des numériques
     num_imputer = None
     scaler = None
     if X_num is not None:
@@ -76,7 +80,7 @@ def prepare_features_and_target(df: pd.DataFrame, target_col: str):
     else:
         X_num_scaled = None
 
-    # 2) Imputation + encodage des catégorielles
+    # 4) Imputation + encodage des catégorielles
     cat_imputer = None
     ohe = None
     X_cat_encoded = None
@@ -87,7 +91,7 @@ def prepare_features_and_target(df: pd.DataFrame, target_col: str):
         ohe = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
         X_cat_encoded = ohe.fit_transform(X_cat_imputed)
 
-    # 3) Concaténation
+    # 5) Concaténation des features
     if X_num_scaled is not None and X_cat_encoded is not None:
         X = np.hstack([X_num_scaled, X_cat_encoded])
     elif X_num_scaled is not None:
@@ -97,7 +101,7 @@ def prepare_features_and_target(df: pd.DataFrame, target_col: str):
     else:
         raise ValueError("Aucune feature utilisable (numérique ou catégorielle).")
 
-    # 4) Noms de features après encodage
+    # 6) Noms de features après encodage
     feature_names = []
     if num_cols:
         feature_names.extend(num_cols)
@@ -120,67 +124,92 @@ def prepare_features_and_target(df: pd.DataFrame, target_col: str):
 
 
 # =========================
-#   DONNÉES SIMULÉES
+#   DONNÉES SIMULÉES (scénarios de l'article)
 # =========================
 
 def generate_simulated_data(config: dict):
     """
-    Génère des données simulées pour différents scénarios.
+    Génère des données simulées conformes aux 4 scénarios de Zhu (2015).
+
     Paramètres dans config["simulation_params"] :
-      - n: nombre d'observations (par défaut 500)
-      - p: nombre de variables (par défaut 200, comme dans l'article)
-    config["scenario"] peut être : "simu1", "simu2", "simu3", "simu4"
+      - p : nombre de variables (200, 500, 1000, etc.)
+      - n (optionnel) : si non fourni, on utilise les N de l'article :
+          scenario1: 100, scenario2: 100, scenario3: 300, scenario4: 200.
+
+    config["scenario"] doit être : "scenario1", "scenario2", "scenario3", "scenario4".
     """
     sim_params = config.get("simulation_params", {})
-    n = sim_params.get("n", 500)
     p = sim_params.get("p", 200)
+
+    scenario = config.get("scenario", "scenario1")
     random_state = config.get("random_state", 42)
     rng = np.random.default_rng(random_state)
 
-    scenario = config.get("scenario", "simu1")
+    # Choix de N si non donné
+    if "n" in sim_params:
+        n = sim_params["n"]
+    else:
+        if scenario == "scenario1":
+            n = 100
+        elif scenario == "scenario2":
+            n = 100
+        elif scenario == "scenario3":
+            n = 300
+        elif scenario == "scenario4":
+            n = 200
+        else:
+            raise ValueError(f"Scénario simulé inconnu: {scenario}")
 
-    # X ~ N(0,1) indépendantes
-    X = rng.normal(size=(n, p))
+    # -------- Scenario 1: classification, X ~ Unif[0,1]^p ----------
+    if scenario == "scenario1":
+        X = rng.uniform(0.0, 1.0, size=(n, p))
 
-    # Scénario 1 : régression linéaire sparse
-    if scenario == "simu1":
-        beta = np.zeros(p)
-        beta[:5] = [3, -2, 1.5, 0.5, -1]
-        noise = rng.normal(scale=1.0, size=n)
-        y = X @ beta + noise
-        task_type = "regression"
+        # mu_i = Phi( 10*(X1 - 1) + 20*|X2 - 0.5| ), Phi cdf normale
+        from math import sqrt, erf
 
-    # Scénario 2 : régression non-linéaire (polynomiale + interaction)
-    elif scenario == "simu2":
-        f = (
-            2.0 * np.sin(X[:, 0])
-            + 1.5 * (X[:, 1] ** 2)
-            - 3.0 * X[:, 2] * X[:, 3]
-        )
-        noise = rng.normal(scale=1.0, size=n)
-        y = f + noise
-        task_type = "regression"
+        def phi_cdf(z):
+            return 0.5 * (1.0 + erf(z / sqrt(2.0)))
 
-    # Scénario 3 : classification logistique sparse
-    elif scenario == "simu3":
-        beta = np.zeros(p)
-        beta[:5] = [1.2, -1.0, 0.8, 0.5, -0.7]
-        lin_pred = X @ beta
-        prob = 1 / (1 + np.exp(-lin_pred))
-        y = (rng.random(n) < prob).astype(int)
+        lin = 10.0 * (X[:, 0] - 1.0) + 20.0 * np.abs(X[:, 1] - 0.5)
+        mu = np.array([phi_cdf(z) for z in lin])
+        y = (rng.random(n) < mu).astype(int)
         task_type = "classification"
 
-    # Scénario 4 : checkerboard (interaction forte sur X1, X2)
-    elif scenario == "simu4":
-        X = np.hstack([
-            rng.uniform(0, 1, size=(n, 2)),
-            rng.normal(size=(n, p - 2))
-        ])
+    # -------- Scenario 2: non-linear regression, X ~ Unif[0,1]^p ----------
+    elif scenario == "scenario2":
+        X = rng.uniform(0.0, 1.0, size=(n, p))
+        part2 = np.maximum(X[:, 1] - 0.25, 0.0)
+        f = 100.0 * (X[:, 0] - 0.5) ** 2 * part2
+        eps = rng.normal(loc=0.0, scale=1.0, size=n)
+        y = f + eps
+        task_type = "regression"
+
+    # -------- Scenario 3: checkerboard-like regression with strong correlation ----------
+    elif scenario == "scenario3":
+        if p < 200:
+            raise ValueError("Scenario3 nécessite p >= 200")
+        idx = np.arange(p)
+        Sigma = 0.9 ** np.abs(idx[:, None] - idx[None, :])
+        X = rng.multivariate_normal(mean=np.zeros(p), cov=Sigma, size=n)
+        eps = rng.normal(loc=0.0, scale=1.0, size=n)
         y = (
-            ((X[:, 0] > 0.5) & (X[:, 1] > 0.5)) |
-            ((X[:, 0] <= 0.5) & (X[:, 1] <= 0.5))
-        ).astype(int)
-        task_type = "classification"
+            2.0 * X[:, 49] * X[:, 99]
+            + 2.0 * X[:, 149] * X[:, 199]
+            + eps
+        )
+        task_type = "regression"
+
+    # -------- Scenario 4: linear regression, correlated X ----------
+    elif scenario == "scenario4":
+        if p < 150:
+            raise ValueError("Scenario4 nécessite p >= 150")
+        idx = np.arange(p)
+        base = 0.5 ** np.abs(idx[:, None] - idx[None, :])
+        Sigma = base + 0.2 * (1 - np.eye(p))
+        X = rng.multivariate_normal(mean=np.zeros(p), cov=Sigma, size=n)
+        eps = rng.normal(loc=0.0, scale=1.0, size=n)
+        y = 2.0 * X[:, 49] + 2.0 * X[:, 99] + 4.0 * X[:, 149] + eps
+        task_type = "regression"
 
     else:
         raise ValueError(f"Scénario simulé inconnu: {scenario}")
@@ -191,6 +220,8 @@ def generate_simulated_data(config: dict):
         "scenario": scenario,
         "task_type": task_type,
         "feature_names": feature_names,
+        "n": n,
+        "p": p,
     }
 
     return X, y, meta
@@ -202,10 +233,11 @@ def generate_simulated_data(config: dict):
 
 def load_and_prepare_data(config: dict):
     """
-    Pipeline générale data_preparation :
-      - source = "real"      -> données réelles (CSV, standardisation, encodage)
-      - source = "simulated" -> scénarios de simulation
-    Renvoie X_train, X_test, y_train, y_test, meta
+    Pipeline générale de préparation :
+      - source = "real"      : charge CSV, prépare X/y, split train/test.
+      - source = "simulated" : génère un scénario, split train/test.
+
+    Renvoie X_train, X_test, y_train, y_test, meta.
     """
     source = config.get("source", "real")
     random_state = config.get("random_state", 42)
