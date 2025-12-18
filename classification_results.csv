@@ -1,0 +1,10 @@
+Dataset,Model,Accuracy,F1-score,ROC-AUC
+df1,RandomForest,0.9649,0.9645,0.9926
+df1,ExtraTrees,0.9737,0.9735,0.999
+df1,GradientBoosting,0.9649,0.9645,0.997
+df7,RandomForest,0.8542,0.8536,0.9219
+df7,ExtraTrees,0.9167,0.9161,0.9818
+df7,GradientBoosting,0.8958,0.8958,0.9497
+df8,RandomForest,0.8333,0.8255,0.9714
+df8,ExtraTrees,0.881,0.8778,0.9703
+df8,GradientBoosting,0.7857,0.7757,0.9497
