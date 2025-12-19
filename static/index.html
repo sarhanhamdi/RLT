@@ -1,0 +1,27 @@
+﻿<!DOCTYPE html>
+<html><head><title>RLT Dashboard</title>
+<link rel='stylesheet' href='style.css'>
+</head><body style='font-family:Arial;background:#f0f8ff;padding:40px;text-align:center;'>
+<div style='max-width:700px;margin:0 auto;background:white;padding:40px;border-radius:20px;box-shadow:0 10px 40px rgba(0,0,0,0.1);'>
+<h1 style='color:#2c3e50;margin-bottom:30px;'>🚀 RLT CRISP-DM Dashboard</h1>
+<form action='/predict' method='post' enctype='multipart/form-data' style='max-width:500px;margin:0 auto;'>
+  <div style='margin:30px 0;text-align:left;'>
+    <label style='display:block;margin-bottom:10px;font-weight:600;color:#333;font-size:16px;'>📁 CSV File:</label>
+    <input type='file' name='file' accept='.csv' required style='width:100%;padding:15px;border:2px solid #ddd;border-radius:10px;font-size:16px;'>
+  </div>
+  <div style='margin:30px 0;text-align:left;'>
+    <label style='display:block;margin-bottom:10px;font-weight:600;color:#333;font-size:16px;'>🎯 Target Column:</label>
+    <input type='text' name='target_col' placeholder='diagnosis, MEDV, quality...' style='width:100%;padding:15px;border:2px solid #ddd;border-radius:10px;font-size:16px;' required>
+    <small style='color:#666;display:block;margin-top:5px;'>Last column auto-used if empty</small>
+  </div>
+  <button type='submit' style='width:100%;background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:20px;border:none;border-radius:30px;font-size:18px;font-weight:600;cursor:pointer;transition:all 0.3s;box-shadow:0 5px 15px rgba(102,126,234,0.4);'>
+    🚀 Analyze 13 RLT + Baseline Models
+  </button>
+</form>
+<div style='margin-top:40px;padding:25px;background:#f8f9fa;border-radius:15px;'>
+  <h3 style='color:#495057;'>⚙️ Auto-Pipeline:</h3>
+  <p style='color:#666;margin:10px 0;'>Impute → Scale → Encode → 70/30 Split → Benchmark</p>
+  <p style='color:#666;'><strong>13 Models:</strong> 9 RLT variants + RF + ET + GBC + LogReg</p>
+</div>
+</div>
+</body></html>

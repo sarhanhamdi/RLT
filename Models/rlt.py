@@ -8,7 +8,7 @@ from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
 class RLTBase(BaseEstimator):
     def __init__(
         self,
-        n_estimators: int = 5,
+        n_estimators: int = 20,
         n_min: int = 5,
         muting: str = "none",
         k: int = 1,

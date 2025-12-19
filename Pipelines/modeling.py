@@ -4,7 +4,7 @@ import os
 import csv
 from sklearn.metrics import mean_squared_error, accuracy_score
 
-from Models.registry import get_benchmark_models
+from Models.registry_updated import get_benchmark_models
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "results")
 

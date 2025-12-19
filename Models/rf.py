@@ -5,7 +5,7 @@ from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 
 def make_rf_regressor(
     random_state: int = 42,
-    n_estimators: int = 500,
+    n_estimators: int = 200,
     max_features = "sqrt",
 ):
     """

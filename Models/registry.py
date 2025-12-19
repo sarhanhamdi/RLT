@@ -147,7 +147,7 @@ def get_benchmark_models(task_type: str, p: int = None, random_state: int = 42):
             for k in [1, 2, 5]:
                 name = f"RLT_{mut}_k{k}"
                 models[name] = RLTRegressor(
-                    n_estimators=5,       # 100 dans l'article, 50 pour rapidité
+                    n_estimators=20,       # 100 dans l'article, 50 pour rapidité
                     n_min=5,               # n^(1/3) recommandé, 5 par défaut
                     muting=mut,            # none / moderate / aggressive
                     k=k,                   # Nb de variables pour combinaison linéaire
@@ -175,7 +175,7 @@ def get_benchmark_models(task_type: str, p: int = None, random_state: int = 42):
             for k in [1,2,5]:
                 name = f"RLT_{mut}_k{k}"
                 models[name] = RLTClassifier(
-                    n_estimators=5,
+                    n_estimators=20,
                     n_min=5,
                     muting=mut,
                     k=k,
